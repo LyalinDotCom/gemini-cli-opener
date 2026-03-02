@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Main dropdown panel for the menu bar icon.
 /// Uses .window style MenuBarExtra for rich multi-line session rows.
@@ -8,6 +9,24 @@ struct MenuBarView: View {
     @EnvironmentObject var terminalDetection: TerminalDetectionService
     @EnvironmentObject var quotaService: QuotaService
 
+    /// Unique recent project paths extracted from existing sessions (max 5)
+    private var recentPaths: [String] {
+        var seen = Set<String>()
+        var paths: [String] = []
+        for session in dataService.sessions {
+            if seen.insert(session.projectRoot).inserted {
+                paths.append(session.projectRoot)
+            }
+            if paths.count >= 5 { break }
+        }
+        return paths
+    }
+
+    private var homePath: String {
+        FileManager.default.homeDirectoryForCurrentUser.path
+    }
+
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -15,11 +34,28 @@ struct MenuBarView: View {
                 Text("Gemini Sessions")
                     .font(.headline)
                 Spacer()
-                Button(action: { newSession() }) {
+
+                // New session menu — shows recent paths, common locations, and browse
+                Menu {
+                    // Recent project paths (deduplicated from existing sessions)
+                    if !recentPaths.isEmpty {
+                        Section("Recent Projects") {
+                            ForEach(recentPaths, id: \.self) { path in
+                                Button(shortPath(path)) {
+                                    launchNewSession(at: path)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Button("Browse...") { browseForFolder() }
+                } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
                 .help("New Gemini session")
 
                 Button(action: { dataService.refresh() }) {
@@ -118,31 +154,45 @@ struct MenuBarView: View {
         TerminalLauncherService.openSession(session, terminal: terminal)
     }
 
-    private func newSession() {
-        // Capture what we need before going async
+    /// Shorten a path for display, replacing home directory with ~
+    private func shortPath(_ path: String) -> String {
+        let home = homePath
+        if path == home { return "~" }
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
+    /// Launch a new gemini session at the given path
+    private func launchNewSession(at path: String) {
+        let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
+        TerminalLauncherService.openNewSession(path: path, terminal: terminal)
+    }
+
+    /// Open NSOpenPanel with proper activation for menu bar apps
+    private func browseForFolder() {
         let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
 
-        // Run the folder picker on the next tick so the MenuBarExtra panel
-        // dismisses first — otherwise NSOpenPanel fights it for focus.
-        DispatchQueue.main.async {
+        // Temporarily become a regular app so NSOpenPanel gets proper focus/z-order
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             NSApp.activate(ignoringOtherApps: true)
 
             let panel = NSOpenPanel()
-            panel.title = "Choose a folder for the new Gemini session"
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
             panel.allowsMultipleSelection = false
-            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-            panel.level = .modalPanel
+            panel.canCreateDirectories = true
+            panel.prompt = "Start Session"
+            panel.message = "Choose a folder for the new Gemini CLI session"
 
-            panel.begin { response in
-                guard response == .OK, let url = panel.url else {
-                    Log.terminal.debug("Folder picker cancelled")
-                    return
-                }
-                Log.terminal.info("Folder selected: \(url.path)")
+            if panel.runModal() == .OK, let url = panel.url {
                 TerminalLauncherService.openNewSession(path: url.path, terminal: terminal)
             }
+
+            // Revert to accessory (menu bar only) app
+            NSApp.setActivationPolicy(.accessory)
         }
     }
 }
