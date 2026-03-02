@@ -6,7 +6,7 @@ import Foundation
 /// 1. Read ~/.gemini/oauth_creds.json for access_token + refresh_token
 /// 2. Refresh the token via Google OAuth2 if expired
 /// 3. POST to cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota
-/// 4. Parse the response into ModelQuota buckets
+/// 4. Parse and filter the response into ModelQuota buckets
 class QuotaService: ObservableObject {
     @Published var quota: QuotaResponse?
     @Published var isLoading = false
@@ -20,7 +20,7 @@ class QuotaService: ObservableObject {
     private let clientSecret = "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"
     private let tokenEndpoint = "https://oauth2.googleapis.com/token"
 
-    /// Minimum interval between fetches (avoid hammering the API)
+    /// Minimum interval between fetches
     private let minFetchInterval: TimeInterval = 60
     private var lastFetchTime: Date?
 
@@ -46,7 +46,7 @@ class QuotaService: ObservableObject {
                     self.quota = response
                     self.isLoading = false
                     self.lastFetchTime = Date()
-                    Log.data.info("Quota fetched: \(response.buckets.count) buckets")
+                    Log.data.info("Quota fetched: \(response.buckets.count) models")
                 }
             } catch {
                 await MainActor.run {
@@ -68,11 +68,8 @@ class QuotaService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        // Minimal request body
-        let body: [String: Any] = [
-            "userAgent": "GeminiCLIOpener/1.0"
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        // Empty body — the API rejects unknown fields
+        request.httpBody = "{}".data(using: .utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -85,12 +82,11 @@ class QuotaService: ObservableObject {
             throw QuotaError.apiError(httpResponse.statusCode, body)
         }
 
-        return try parseQuotaResponse(data)
+        return parseQuotaResponse(data)
     }
 
     // MARK: - OAuth Token Management
 
-    /// Get a valid access token, refreshing if expired.
     private func getValidAccessToken() async throws -> String {
         let creds = try loadCredentials()
 
@@ -99,7 +95,6 @@ class QuotaService: ObservableObject {
             return creds.accessToken
         }
 
-        // Token expired — refresh it
         Log.data.info("Access token expired, refreshing...")
         guard let refreshToken = creds.refreshToken else {
             throw QuotaError.noRefreshToken
@@ -107,7 +102,6 @@ class QuotaService: ObservableObject {
         return try await refreshAccessToken(refreshToken: refreshToken)
     }
 
-    /// Refresh the access token using Google's OAuth2 token endpoint.
     private func refreshAccessToken(refreshToken: String) async throws -> String {
         var request = URLRequest(url: URL(string: tokenEndpoint)!)
         request.httpMethod = "POST"
@@ -132,7 +126,6 @@ class QuotaService: ObservableObject {
             throw QuotaError.tokenRefreshFailed
         }
 
-        // Save the refreshed token back to disk
         let expiresIn = json["expires_in"] as? Int ?? 3600
         try saveRefreshedToken(accessToken: newToken, expiresIn: expiresIn)
 
@@ -167,7 +160,6 @@ class QuotaService: ObservableObject {
         )
     }
 
-    /// Update the stored credentials with the new access token and expiry.
     private func saveRefreshedToken(accessToken: String, expiresIn: Int) throws {
         guard var data = try? Data(contentsOf: credentialsURL),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -183,24 +175,23 @@ class QuotaService: ObservableObject {
 
     // MARK: - Response Parsing
 
-    private func parseQuotaResponse(_ data: Data) throws -> QuotaResponse {
+    private func parseQuotaResponse(_ data: Data) -> QuotaResponse {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let buckets = json["buckets"] as? [[String: Any]] else {
             return QuotaResponse(buckets: [], fetchedAt: Date())
         }
 
         let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        isoFormatter.formatOptions = [.withInternetDateTime]
 
-        let modelQuotas: [ModelQuota] = buckets.compactMap { bucket in
+        let allQuotas: [ModelQuota] = buckets.compactMap { bucket in
             guard let modelId = bucket["modelId"] as? String else { return nil }
 
-            let fraction = bucket["remainingFraction"] as? Double ?? 0
+            // Skip _vertex duplicates — they mirror the main model
+            if modelId.hasSuffix("_vertex") { return nil }
 
-            var remaining: Int?
-            if let amountStr = bucket["remainingAmount"] as? String {
-                remaining = Int(amountStr)
-            }
+            // remainingFraction is the only usage field the API returns (0.0–1.0)
+            let fraction = bucket["remainingFraction"] as? Double ?? 0
 
             var resetTime: Date?
             if let resetStr = bucket["resetTime"] as? String {
@@ -211,12 +202,14 @@ class QuotaService: ObservableObject {
                 id: modelId,
                 modelId: modelId,
                 remainingFraction: fraction,
-                remainingAmount: remaining,
                 resetTime: resetTime
             )
         }
 
-        return QuotaResponse(buckets: modelQuotas, fetchedAt: Date())
+        // Sort: most-used models first (lowest remaining fraction)
+        let sorted = allQuotas.sorted { $0.remainingFraction < $1.remainingFraction }
+
+        return QuotaResponse(buckets: sorted, fetchedAt: Date())
     }
 }
 

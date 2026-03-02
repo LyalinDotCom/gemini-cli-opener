@@ -14,7 +14,6 @@ struct QuotaView: View {
             } else if let quota = quotaService.quota, quota.hasData {
                 quotaContent(quota)
             } else {
-                // No data yet — trigger a fetch
                 Text("Loading usage...")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -45,7 +44,13 @@ struct QuotaView: View {
             Text(message)
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+            Spacer()
+            Button("Retry") {
+                quotaService.refresh(force: true)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
         }
     }
 
@@ -53,7 +58,7 @@ struct QuotaView: View {
 
     private func quotaContent(_ quota: QuotaResponse) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Header: "Usage" + reset time
+            // Header row
             HStack {
                 Text("Usage")
                     .font(.caption)
@@ -70,36 +75,49 @@ struct QuotaView: View {
                 }
             }
 
-            // Per-model bars
-            ForEach(quota.buckets) { bucket in
-                QuotaBarView(quota: bucket)
+            // Show models with usage first, then a summary of unused ones
+            let used = quota.usedBuckets
+            let unusedCount = quota.buckets.count - used.count
+
+            if used.isEmpty {
+                Text("All models at full quota")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(used) { bucket in
+                    QuotaBarView(quota: bucket)
+                }
+            }
+
+            if unusedCount > 0 {
+                Text("\(unusedCount) other model\(unusedCount == 1 ? "" : "s") at 100%")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
     }
 }
 
-/// A single model's quota bar: label, progress bar, percentage, remaining count.
+/// A single model's quota bar: label, progress bar, percentage.
 struct QuotaBarView: View {
     let quota: ModelQuota
 
     var body: some View {
         HStack(spacing: 8) {
-            // Model name (fixed width for alignment)
+            // Model name
             Text(quota.displayName)
                 .font(.caption)
-                .frame(width: 40, alignment: .leading)
+                .frame(width: 80, alignment: .leading)
 
             // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    // Background track
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.primary.opacity(0.1))
 
-                    // Filled portion
                     RoundedRectangle(cornerRadius: 3)
                         .fill(barColor)
-                        .frame(width: geo.size.width * quota.remainingFraction)
+                        .frame(width: max(geo.size.width * quota.remainingFraction, 2))
                 }
             }
             .frame(height: 6)
@@ -108,17 +126,10 @@ struct QuotaBarView: View {
             Text("\(quota.percentRemaining)%")
                 .font(.caption2)
                 .monospacedDigit()
-                .frame(width: 30, alignment: .trailing)
-
-            // Remaining count
-            if let remaining = quota.remainingAmount {
-                Text("\(remaining) left")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .frame(width: 55, alignment: .trailing)
-            }
+                .foregroundColor(barColor)
+                .frame(width: 32, alignment: .trailing)
         }
-        .frame(height: 14)
+        .frame(height: 16)
     }
 
     /// Color based on remaining fraction: green → yellow → red

@@ -1,21 +1,23 @@
 import Foundation
 
 /// Quota information for a single Gemini model.
+/// The API returns remainingFraction (0.0–1.0) and reset time per model.
 struct ModelQuota: Identifiable {
-    let id: String           // modelId from API
+    let id: String
     let modelId: String
-    let remainingFraction: Double   // 0.0 to 1.0
-    let remainingAmount: Int?       // Absolute count of requests left
-    let resetTime: Date?            // When quota resets
+    let remainingFraction: Double   // 0.0 (exhausted) to 1.0 (full)
+    let resetTime: Date?
 
-    /// Human-readable model name (strip prefixes, shorten)
+    /// Short display name for UI
     var displayName: String {
-        // "gemini-2.5-pro-preview-05-06" → "Pro"
-        // "gemini-2.5-flash-preview-05-20" → "Flash"
-        // "gemini-2.0-flash" → "Flash 2.0"
         let lower = modelId.lowercased()
-        if lower.contains("pro") { return "Pro" }
-        if lower.contains("flash") { return "Flash" }
+        // Map known model IDs to short labels
+        if lower.contains("3-pro")            { return "3 Pro" }
+        if lower.contains("3-flash")          { return "3 Flash" }
+        if lower.contains("2.5-pro")          { return "2.5 Pro" }
+        if lower.contains("2.5-flash-lite")   { return "2.5 Flash Lite" }
+        if lower.contains("2.5-flash")        { return "2.5 Flash" }
+        if lower.contains("2.0-flash")        { return "2.0 Flash" }
         return modelId
     }
 
@@ -24,10 +26,9 @@ struct ModelQuota: Identifiable {
         Int(remainingFraction * 100)
     }
 
-    /// Calculated total limit from remaining amount and fraction
-    var totalLimit: Int? {
-        guard let remaining = remainingAmount, remainingFraction > 0 else { return nil }
-        return Int(Double(remaining) / remainingFraction)
+    /// True if this model has been used at all (fraction < 1.0)
+    var hasUsage: Bool {
+        remainingFraction < 1.0
     }
 }
 
@@ -35,6 +36,11 @@ struct ModelQuota: Identifiable {
 struct QuotaResponse {
     let buckets: [ModelQuota]
     let fetchedAt: Date
+
+    /// Models that have actual usage (not at 100%)
+    var usedBuckets: [ModelQuota] {
+        buckets.filter { $0.hasUsage }
+    }
 
     /// Time until the earliest reset
     var resetTimeString: String? {
@@ -50,7 +56,6 @@ struct QuotaResponse {
         return "resets in \(minutes)m"
     }
 
-    /// True if we have any meaningful quota data
     var hasData: Bool {
         !buckets.isEmpty
     }
