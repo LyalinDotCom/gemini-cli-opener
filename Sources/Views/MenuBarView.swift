@@ -119,17 +119,30 @@ struct MenuBarView: View {
     }
 
     private func newSession() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose a folder for the new Gemini session"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        panel.level = .floating
+        // Capture what we need before going async
+        let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
 
-        if panel.runModal() == .OK, let url = panel.url {
-            let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
-            TerminalLauncherService.openNewSession(path: url.path, terminal: terminal)
+        // Run the folder picker on the next tick so the MenuBarExtra panel
+        // dismisses first — otherwise NSOpenPanel fights it for focus.
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+
+            let panel = NSOpenPanel()
+            panel.title = "Choose a folder for the new Gemini session"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            panel.level = .modalPanel
+
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else {
+                    Log.terminal.debug("Folder picker cancelled")
+                    return
+                }
+                Log.terminal.info("Folder selected: \(url.path)")
+                TerminalLauncherService.openNewSession(path: url.path, terminal: terminal)
+            }
         }
     }
 }
