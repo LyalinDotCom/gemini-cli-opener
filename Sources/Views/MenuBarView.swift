@@ -44,7 +44,7 @@ struct MenuBarView: View {
             // Footer: Settings + Quit
             HStack {
                 Button("Settings...") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    openSettings()
                 }
                 .buttonStyle(.borderless)
 
@@ -104,6 +104,17 @@ struct MenuBarView: View {
     private func openSession(_ session: GeminiSession) {
         let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
         TerminalLauncherService.openSession(session, terminal: terminal)
+    }
+
+    /// Open the Settings window. Must dismiss the MenuBarExtra panel first,
+    /// then activate the app so the settings window comes to front.
+    private func openSettings() {
+        // Dismiss the menu bar panel by deactivating, then reactivate for Settings
+        NSApp.activate(ignoringOtherApps: true)
+        // Small delay so the panel dismisses before Settings window appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 }
 
