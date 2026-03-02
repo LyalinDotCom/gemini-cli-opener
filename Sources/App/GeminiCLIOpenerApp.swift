@@ -25,13 +25,6 @@ struct GeminiCLIOpenerApp: App {
             MenuBarLabel()
         }
         .menuBarExtraStyle(.window)
-
-        // Settings window (opened via menu item)
-        Settings {
-            SettingsView()
-                .environmentObject(appSettings)
-                .environmentObject(terminalDetection)
-        }
     }
 
     /// Start watching ~/.gemini/tmp/ for session file changes
@@ -52,7 +45,6 @@ struct MenuBarLabel: View {
     var body: some View {
         if let iconURL = Bundle.module.url(forResource: "menubar-icon", withExtension: "png"),
            let nsImage = NSImage(contentsOf: iconURL) {
-            // Size to standard menu bar height (18pt), the @2x PNG handles Retina
             Image(nsImage: nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)

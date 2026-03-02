@@ -2,11 +2,6 @@ import SwiftUI
 
 /// Main dropdown panel for the menu bar icon.
 /// Uses .window style MenuBarExtra for rich multi-line session rows.
-///
-/// Each session row shows:
-/// 1. Topic (first user message) — wraps to multiple lines
-/// 2. Project path
-/// 3. Relative time + message count
 struct MenuBarView: View {
     @EnvironmentObject var dataService: GeminiDataService
     @EnvironmentObject var appSettings: AppSettings
@@ -19,12 +14,14 @@ struct MenuBarView: View {
                 Text("Gemini Sessions")
                     .font(.headline)
                 Spacer()
-                Button(action: { dataService.refresh() }) {
+                Button(action: {
+                    dataService.refresh()
+                }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.body)
                 }
-                .buttonStyle(.borderless)
-                .help("Refresh")
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Refresh sessions")
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -41,21 +38,29 @@ struct MenuBarView: View {
 
             Divider()
 
-            // Footer: Settings + Quit
-            HStack {
-                Button("Settings...") {
-                    openSettings()
+            // Footer
+            HStack(spacing: 8) {
+                Button(action: {
+                    SettingsWindowService.shared.open(
+                        appSettings: appSettings,
+                        terminalDetection: terminalDetection
+                    )
+                }) {
+                    Label("Settings", systemImage: "gear")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 Spacer()
 
-                Button("Quit") {
+                Button(action: {
                     NSApplication.shared.terminate(nil)
+                }) {
+                    Text("Quit")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .font(.caption)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
@@ -66,17 +71,14 @@ struct MenuBarView: View {
 
     private var sessionList: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 1) {
                 ForEach(dataService.sessions) { session in
                     SessionRowView(session: session) {
                         openSession(session)
                     }
-                    if session.id != dataService.sessions.last?.id {
-                        Divider()
-                            .padding(.horizontal, 12)
-                    }
                 }
             }
+            .padding(.vertical, 4)
         }
         .frame(maxHeight: 420)
     }
@@ -105,71 +107,77 @@ struct MenuBarView: View {
         let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
         TerminalLauncherService.openSession(session, terminal: terminal)
     }
-
-    /// Open the Settings window. Must dismiss the MenuBarExtra panel first,
-    /// then activate the app so the settings window comes to front.
-    private func openSettings() {
-        // Dismiss the menu bar panel by deactivating, then reactivate for Settings
-        NSApp.activate(ignoringOtherApps: true)
-        // Small delay so the panel dismisses before Settings window appears
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        }
-    }
 }
 
 // MARK: - Session Row
 
-/// Individual session row with multi-line layout:
-/// - Topic (first user message, wraps naturally)
-/// - Project path
-/// - Relative time + message count
+/// Individual session row styled as a clickable card.
 struct SessionRowView: View {
     let session: GeminiSession
     let action: () -> Void
 
     @State private var isHovering = false
+    @State private var isPressed = false
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                // Line 1: Topic — wraps to show full context
-                Text(session.displayTopic)
-                    .font(.body)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 4) {
+            // Line 1: Topic
+            Text(session.displayTopic)
+                .font(.body)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundColor(.primary)
 
-                // Line 2: Project path
-                Text(session.shortPath)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            // Line 2: Project path
+            Text(session.shortPath)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
 
-                // Line 3: Relative time + message count
-                HStack(spacing: 6) {
-                    Label(session.relativeTimeString, systemImage: "clock")
-                    Text("·")
-                    Label(
-                        "\(session.messageCount) message\(session.messageCount == 1 ? "" : "s")",
-                        systemImage: "bubble.left.and.bubble.right"
-                    )
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            // Line 3: Relative time + message count
+            HStack(spacing: 6) {
+                Label(session.relativeTimeString, systemImage: "clock")
+                Text("·")
+                Label(
+                    "\(session.messageCount) message\(session.messageCount == 1 ? "" : "s")",
+                    systemImage: "bubble.left.and.bubble.right"
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
-        .background(isHovering ? Color.accentColor.opacity(0.1) : Color.clear)
-        .cornerRadius(6)
-        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(backgroundColor)
+        )
+        .padding(.horizontal, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            action()
+        }
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+    }
+
+    private var backgroundColor: Color {
+        if isPressed {
+            return Color.accentColor.opacity(0.2)
+        } else if isHovering {
+            return Color.primary.opacity(0.08)
+        } else {
+            return Color.clear
         }
     }
 }
