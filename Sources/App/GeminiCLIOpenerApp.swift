@@ -7,6 +7,7 @@ struct GeminiCLIOpenerApp: App {
     @StateObject private var dataService = GeminiDataService()
     @StateObject private var appSettings = AppSettings()
     @StateObject private var terminalDetection = TerminalDetectionService()
+    @StateObject private var quotaService = QuotaService()
 
     /// File system watcher for live updates when sessions change
     @State private var fileWatcher: FileWatcherService?
@@ -18,8 +19,10 @@ struct GeminiCLIOpenerApp: App {
                 .environmentObject(dataService)
                 .environmentObject(appSettings)
                 .environmentObject(terminalDetection)
+                .environmentObject(quotaService)
                 .onAppear {
                     startFileWatcher()
+                    quotaService.refresh()
                 }
         } label: {
             MenuBarLabel()

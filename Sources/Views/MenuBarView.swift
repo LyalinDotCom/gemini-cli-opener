@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject var dataService: GeminiDataService
     @EnvironmentObject var appSettings: AppSettings
     @EnvironmentObject var terminalDetection: TerminalDetectionService
+    @EnvironmentObject var quotaService: QuotaService
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +27,10 @@ struct MenuBarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 6)
+
+            // Quota section
+            QuotaView()
+                .environmentObject(quotaService)
 
             Divider()
 
