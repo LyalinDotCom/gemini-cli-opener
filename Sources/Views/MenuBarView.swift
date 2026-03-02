@@ -119,8 +119,18 @@ struct MenuBarView: View {
     }
 
     private func newSession() {
-        let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
-        TerminalLauncherService.openNewSession(terminal: terminal)
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder for the new Gemini session"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.level = .floating
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
+            TerminalLauncherService.openNewSession(path: url.path, terminal: terminal)
+        }
     }
 }
 
