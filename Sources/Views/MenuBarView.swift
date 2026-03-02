@@ -15,14 +15,19 @@ struct MenuBarView: View {
                 Text("Gemini Sessions")
                     .font(.headline)
                 Spacer()
-                Button(action: {
-                    dataService.refresh()
-                }) {
+                Button(action: { newSession() }) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("New Gemini session")
+
+                Button(action: { dataService.refresh() }) {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help("Refresh sessions")
+                .help("Refresh")
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -111,6 +116,11 @@ struct MenuBarView: View {
     private func openSession(_ session: GeminiSession) {
         let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
         TerminalLauncherService.openSession(session, terminal: terminal)
+    }
+
+    private func newSession() {
+        let terminal = terminalDetection.resolveTerminal(appSettings.selectedTerminal)
+        TerminalLauncherService.openNewSession(terminal: terminal)
     }
 }
 

@@ -8,45 +8,53 @@ import AppKit
 /// is loaded (e.g. /opt/homebrew/bin where gemini is typically installed).
 enum TerminalLauncherService {
 
-    /// The command to resume the latest Gemini CLI session
-    private static let geminiCommand = "gemini --resume latest"
-
     /// Open a session's project in the specified terminal and run gemini --resume latest
     static func openSession(_ session: GeminiSession, terminal: TerminalEmulator) {
-        let path = session.projectRoot
-        Log.terminal.info("Launching '\(session.displayTopic)' in \(terminal.displayName) at \(path)")
+        let command = "gemini --resume latest"
+        Log.terminal.info("Resuming '\(session.displayTopic)' in \(terminal.displayName) at \(session.projectRoot)")
+        launch(path: session.projectRoot, command: command, terminal: terminal)
+    }
 
+    /// Open a fresh gemini session in the user's home directory (or a given path)
+    static func openNewSession(path: String? = nil, terminal: TerminalEmulator) {
+        let dir = path ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let command = "gemini"
+        Log.terminal.info("New session in \(terminal.displayName) at \(dir)")
+        launch(path: dir, command: command, terminal: terminal)
+    }
+
+    /// Core launch: open terminal at path, run command
+    private static func launch(path: String, command: String, terminal: TerminalEmulator) {
         switch terminal {
-        case .ghostty:    launchGhostty(path: path)
-        case .iterm2:     launchITerm2(path: path)
-        case .terminal:   launchTerminalApp(path: path)
-        case .warp:       launchWarp(path: path)
-        case .kitty:      launchKitty(path: path)
-        case .alacritty:  launchAlacritty(path: path)
+        case .ghostty:    launchGhostty(path: path, command: command)
+        case .iterm2:     launchITerm2(path: path, command: command)
+        case .terminal:   launchTerminalApp(path: path, command: command)
+        case .warp:       launchWarp(path: path, command: command)
+        case .kitty:      launchKitty(path: path, command: command)
+        case .alacritty:  launchAlacritty(path: path, command: command)
         }
     }
 
     // MARK: - Terminal-Specific Launchers
 
     /// Ghostty: use `open -na` with --working-directory and --command config keys.
-    /// The -e flag doesn't work through `open`, so we use --command instead.
-    private static func launchGhostty(path: String) {
+    private static func launchGhostty(path: String, command: String) {
         runProcess("/usr/bin/open", arguments: [
             "-na", "Ghostty.app", "--args",
             "--working-directory=\(path)",
-            "--command=zsh -lc '\(geminiCommand); exec zsh'"
+            "--command=zsh -lc '\(command); exec zsh'"
         ])
     }
 
     /// iTerm2: AppleScript to create a new window and run the command
-    private static func launchITerm2(path: String) {
+    private static func launchITerm2(path: String, command: String) {
         let escaped = escapePath(path)
         let script = """
         tell application "iTerm"
             activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
-                write text "cd '\(escaped)' && \(geminiCommand)"
+                write text "cd '\(escaped)' && \(command)"
             end tell
         end tell
         """
@@ -54,19 +62,19 @@ enum TerminalLauncherService {
     }
 
     /// Terminal.app: AppleScript to open a new window with the command
-    private static func launchTerminalApp(path: String) {
+    private static func launchTerminalApp(path: String, command: String) {
         let escaped = escapePath(path)
         let script = """
         tell application "Terminal"
             activate
-            do script "cd '\(escaped)' && \(geminiCommand)"
+            do script "cd '\(escaped)' && \(command)"
         end tell
         """
         runAppleScript(script)
     }
 
     /// Warp: AppleScript via System Events to type the command
-    private static func launchWarp(path: String) {
+    private static func launchWarp(path: String, command: String) {
         let escaped = escapePath(path)
         let script = """
         tell application "Warp"
@@ -77,7 +85,7 @@ enum TerminalLauncherService {
             tell process "Warp"
                 keystroke "t" using command down
                 delay 0.3
-                keystroke "cd '\(escaped)' && \(geminiCommand)"
+                keystroke "cd '\(escaped)' && \(command)"
                 key code 36
             end tell
         end tell
@@ -86,18 +94,18 @@ enum TerminalLauncherService {
     }
 
     /// Kitty: direct binary launch with --directory flag
-    private static func launchKitty(path: String) {
+    private static func launchKitty(path: String, command: String) {
         runProcess("/Applications/kitty.app/Contents/MacOS/kitty", arguments: [
             "--directory", path,
-            "zsh", "-lc", "\(geminiCommand); exec zsh"
+            "zsh", "-lc", "\(command); exec zsh"
         ])
     }
 
     /// Alacritty: direct binary launch with --working-directory flag
-    private static func launchAlacritty(path: String) {
+    private static func launchAlacritty(path: String, command: String) {
         runProcess("/Applications/Alacritty.app/Contents/MacOS/alacritty", arguments: [
             "--working-directory", path,
-            "-e", "zsh", "-lc", "\(geminiCommand); exec zsh"
+            "-e", "zsh", "-lc", "\(command); exec zsh"
         ])
     }
 
