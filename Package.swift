@@ -14,7 +14,7 @@ let package = Package(
             path: "Sources",
             resources: [
                 .copy("../Resources/Info.plist"),
-                .process("../Resources/Assets.xcassets")
+                .copy("Resources/menubar-icon.png")
             ]
         )
     ]

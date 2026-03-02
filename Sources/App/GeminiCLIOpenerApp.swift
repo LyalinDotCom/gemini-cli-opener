@@ -13,7 +13,7 @@ struct GeminiCLIOpenerApp: App {
 
     var body: some Scene {
         // Menu bar dropdown — .window style gives us full SwiftUI layout
-        MenuBarExtra("Gemini CLI Opener", image: "MenuBarIcon") {
+        MenuBarExtra {
             MenuBarView()
                 .environmentObject(dataService)
                 .environmentObject(appSettings)
@@ -21,6 +21,8 @@ struct GeminiCLIOpenerApp: App {
                 .onAppear {
                     startFileWatcher()
                 }
+        } label: {
+            MenuBarLabel()
         }
         .menuBarExtraStyle(.window)
 
@@ -41,5 +43,22 @@ struct GeminiCLIOpenerApp: App {
         watcher.start()
         fileWatcher = watcher
         Log.general.info("App started, file watcher active")
+    }
+}
+
+/// Menu bar label that loads the Gemini CLI icon from bundle resources.
+/// Falls back to an SF Symbol if the icon can't be found.
+struct MenuBarLabel: View {
+    var body: some View {
+        if let iconURL = Bundle.module.url(forResource: "menubar-icon", withExtension: "png"),
+           let nsImage = NSImage(contentsOf: iconURL) {
+            // Size to standard menu bar height (18pt), the @2x PNG handles Retina
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 18, height: 18)
+        } else {
+            Image(systemName: "terminal.fill")
+        }
     }
 }
